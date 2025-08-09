@@ -1,17 +1,14 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import './db.js';
 import { PrismaClient } from '@prisma/client';
-dotenv.config({ path: '../infra/.env' });
-const prisma = new PrismaClient();
-
-
+import authRoutes from './routes/auth.routes.js';
 import testRouter from "./routes/test.route.js";
 
-dotenv.config();
+dotenv.config({ path: '../infra/.env' });
 
-const app = express();
+export const app = express();
+const prisma = new PrismaClient();
 const port = Number(process.env.PORT_API ?? 3000);
 
 app.use(cors({
@@ -21,6 +18,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use("/api", testRouter);
+app.use('/auth', authRoutes);
 
 // Route test
 app.get("/", (req, res) => {
