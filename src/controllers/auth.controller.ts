@@ -5,8 +5,13 @@ import * as auth from '../services/auth.service.js';
 export const register: RequestHandler = async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ errors: parsed.error.flatten() });
+
   try {
-    const data = await auth.registerUser(parsed.data);  
+    const data = await auth.registerUser({
+      ...parsed.data,
+      firstName: parsed.data.firstName ?? null,
+      lastName: parsed.data.lastName ?? null,
+    });
     return res.status(201).json(data);
   } catch (e: any) {
     if (e.message === 'EMAIL_TAKEN') return res.status(409).json({ message: 'Email already in use' });
@@ -17,11 +22,12 @@ export const register: RequestHandler = async (req, res) => {
 export const login: RequestHandler = async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ errors: parsed.error.flatten() });
+
   try {
     const data = await auth.loginUser({
       ...parsed.data,
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
+      ip: req.ip ?? null,
+      userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
     });
     return res.json(data);
   } catch (e: any) {

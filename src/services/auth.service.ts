@@ -8,15 +8,15 @@ const prisma = new PrismaClient();
 type RegisterInput = {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
 };
 
 type LoginInput = {
   email: string;
   password: string;
-  ip?: string;
-  userAgent?: string;
+  ip?: string | null;
+  userAgent?: string | null;
 };
 
 export async function registerUser(input: RegisterInput) {
@@ -24,14 +24,15 @@ export async function registerUser(input: RegisterInput) {
   if (exists) throw new Error('EMAIL_TAKEN');
 
   const passwordHash = await bcrypt.hash(input.password, 12);
-  const data: any = {
-    email: input.email,
-    passwordHash,
-  };
-  if (input.firstName !== undefined) data.firstName = input.firstName;
-  if (input.lastName !== undefined) data.lastName = input.lastName;
-
-  const user = await prisma.user.create({ data });
+  
+  const user = await prisma.user.create({
+    data: {
+      email: input.email,
+      passwordHash,
+      firstName: input.firstName ?? null,
+      lastName: input.lastName ?? null,
+    },
+  });
 
   const accessToken = signAccessToken(user.id, user.role);
   const refreshToken = signRefreshToken(user.id, user.role);
@@ -58,14 +59,14 @@ export async function loginUser(input: LoginInput) {
   const refreshToken = signRefreshToken(user.id, user.role);
 
   await prisma.refreshToken.create({
-  data: {
-    token: refreshToken,
-    userId: user.id,
-    ip: input.ip ?? null,
-    userAgent: input.userAgent ?? null,
-    expiresAt: add(new Date(), { days: 7 }),
-  },
-});
+    data: {
+      token: refreshToken,
+      userId: user.id,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      expiresAt: add(new Date(), { days: 7 }),
+    },
+  });
 
   return { user: sanitizeUser(user), accessToken, refreshToken };
 }
