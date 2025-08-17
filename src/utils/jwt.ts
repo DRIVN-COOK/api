@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import type { JwtPayload, SignOptions, Secret } from 'jsonwebtoken';
 import dotenv from "dotenv";
+import crypto from 'crypto';
 dotenv.config({ path: '../infra/.env' });
 
 const accessSecret: Secret = process.env.JWT_ACCESS_SECRET!;
@@ -13,14 +14,14 @@ function getExpires(envVal: string | undefined, fallback: Expires): Expires {
 }
 
 export function signAccessToken(sub: string, role: 'USER' | 'ADMIN') {
-  const payload: JwtPayload = { sub, role };
+  const payload: JwtPayload = { sub, role, type: 'access' };
   const options: SignOptions = { expiresIn: getExpires(process.env.JWT_ACCESS_EXPIRES, '5m') };
   return jwt.sign(payload, accessSecret, options);
 }
 
 export function signRefreshToken(sub: string, role: 'USER' | 'ADMIN') {
-  const payload: JwtPayload = { sub, role };
-  const options: SignOptions = { expiresIn: getExpires(process.env.JWT_REFRESH_EXPIRES, '7d') };
+  const payload: JwtPayload = { sub, role, type: 'refresh' };
+  const options: SignOptions = { expiresIn: getExpires(process.env.JWT_REFRESH_EXPIRES, '7d'), jwtid: crypto.randomUUID()};
   return jwt.sign(payload, refreshSecret, options);
 }
 

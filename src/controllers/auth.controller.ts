@@ -51,7 +51,8 @@ export const refresh: RequestHandler = async (req, res) => {
   try {
     const tokens = await auth.refreshTokens(parsed.data.refreshToken);
     return res.json(tokens);
-  } catch {
+  } catch (e: any) {
+    console.error('REFRESH ERROR =>', e?.message || e);
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
 };

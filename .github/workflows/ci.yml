@@ -2,34 +2,57 @@ name: CI API DRIVN-COOK
 
 on:
   push:
-    branches: main
+    branches: [main]
   pull_request:
-    branches: main
+    branches: [main]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        # Attendre que Postgres soit prêt
+        options: >-
+          --health-cmd="pg_isready -U postgres -d testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # Ton schema.prisma utilise DB_URL (et pas DATABASE_URL) → on fournit DB_URL ici
+      DB_URL: postgresql://postgres:postgres@localhost:5432/testdb
+
     steps:
-      # 1. Récupère le code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Installe Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          cache: 'npm'
 
-      # 3. Installe les dépendances
       - name: Install dependencies
         run: npm ci
 
-      # 4. Vérifie la compilation TS
-      - name: Build project
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      # Si tu as des migrations SQL: préfère migrate deploy.
+      # Si tu n'as pas encore de migrations, remplace par: `npx prisma db push`
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Type-check & build
         run: npm run build
 
-      # 5. Lance les tests Vitest
-      - name: Run tests
+      - name: Run tests (Vitest)
         run: npm run test
