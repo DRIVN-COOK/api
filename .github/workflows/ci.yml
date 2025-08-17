@@ -17,19 +17,14 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: testdb
-          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
         ports:
           - 5432:5432
-        # Attendre que Postgres soit prêt
         options: >-
           --health-cmd="pg_isready -U postgres -d testdb"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
-
-    env:
-      # Ton schema.prisma utilise DB_URL (et pas DATABASE_URL) → on fournit DB_URL ici
+    env: 
       DB_URL: postgresql://postgres:postgres@localhost:5432/testdb
 
     steps:
@@ -42,14 +37,19 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # Ici on écrit le contenu du secret ENV_FILE dans un fichier .env
+      - name: Create .env file from secret
+        run: |
+          echo "${{ secrets.ENV_FILE }}" > .env
+
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      # Si tu as des migrations SQL: préfère migrate deploy.
-      # Si tu n'as pas encore de migrations, remplace par: `npx prisma db push`
+      # Si tu utilises les migrations, garde migrate deploy
+      # sinon remplace par: npx prisma db push
       - name: Apply migrations
         run: npx prisma migrate deploy
 
