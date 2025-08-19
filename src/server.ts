@@ -11,9 +11,18 @@ export const app = express();
 const prisma = new PrismaClient();
 const port = Number(process.env.PORT_API ?? 3000);
 
+const envOrigins = (process.env.CORS_ORIGIN ?? '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: (process.env.CORS_ORIGIN ?? '').split(',').map(s => s.trim()).filter(Boolean),
   credentials: true,
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // curl / SSR
+    if (envOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error(`Not allowed by CORS: ${origin}`));
+  },
 }));
 app.use(express.json());
 
