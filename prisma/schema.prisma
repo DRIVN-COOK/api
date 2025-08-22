@@ -7,19 +7,30 @@ datasource db {
   url      = env("DB_URL")
 }
 
+/* =========================
+   AUTH / RÔLES
+   ========================= */
+
+/// Compte d’authentification générique (back-office, HQ, franchisé, client).
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
+  id            String         @id @default(uuid())
+  email         String         @unique
   passwordHash  String
   firstName     String?
   lastName      String?
-  role          Role     @default(USER)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens RefreshToken[]  
+  customer      Customer?
+  franchiseUsers FranchiseUser[]
+  auditLogs AuditLog[]
+
+  @@index([role])
 }
 
+/// Jeton de rafraîchissement (rotation/révocation).
 model RefreshToken {
   id          String   @id @default(uuid())
   token       String   @unique
@@ -30,9 +41,673 @@ model RefreshToken {
   revokedAt   DateTime?
   createdAt   DateTime @default(now())
   expiresAt   DateTime
+
+  @@index([userId])
 }
 
+/// Fiche métier du client final connecté (obligatoirement lié à User).
+/// - Tu peux stocker ici les infos propres au parcours client (fidélité, commandes, etc.).
+model Customer {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  phone       String?
+  defaultCity String?
+  defaultZip  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  loyaltyCard LoyaltyCard?
+  orders      CustomerOrder[]
+  events      EventRegistration[]
+  loyaltyTxns LoyaltyTransaction[]
+}
+
+model FranchiseUser {
+  id           String     @id @default(uuid())
+  userId       String
+  franchiseeId String
+  roleInFranchise String? // ex: OWNER, MANAGER, STAFF si tu veux raffiner
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  franchisee   Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, franchiseeId]) // un user ne peut avoir qu’un rôle par franchise
+  @@index([franchiseeId])
+}
+
+
+/// Rôles applicatifs.
+/// - FRANCHISE_OWNER : franchisé (front de gestion)
+/// - HQ_STAFF : staff maison-mère (back-office)
+/// - TRUCK_STAFF : employé de camion (si tu veux des comptes terrain)
+/// - CUSTOMER : client final connecté
 enum Role {
   USER
   ADMIN
+  HQ_STAFF
+  FRANCHISE_OWNER
+  TRUCK_STAFF
+  CUSTOMER
+}
+
+/* =========================
+   FRANCHISES / CONTRAT
+   ========================= */
+
+/// Entité franchise (personne morale licenciée).
+model Franchisee {
+  id                 String               @id @default(uuid())
+  name               String
+  siren              String               @unique
+  contactEmail       String?
+  contactPhone       String?
+  billingAddress     String?
+  joinDate           DateTime?
+  active             Boolean              @default(true)
+  defaultWarehouseId String?
+  defaultWarehouse   Warehouse? @relation("DefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull)
+
+  agreements         FranchiseAgreement[]
+  franchiseUsers     FranchiseUser[]               // FRANCHISE_OWNER rattachés
+  trucks             Truck[]
+  purchaseOrders     PurchaseOrder[]
+  customerOrders     CustomerOrder[]
+  events             Event[]
+  revenueReports     RevenueShareReport[]
+  deployments        TruckDeployment[]
+  salesSummaries SalesSummary[]
+
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+}
+
+/// Historisation des conditions contractuelles (droit d’entrée, % redevance).
+model FranchiseAgreement {
+  id               String   @id @default(uuid())
+  franchiseeId     String
+  franchisee       Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+
+  startDate        DateTime
+  endDate          DateTime?
+  entryFeeAmount   Decimal  @db.Decimal(12,2) // ex: 50000.00
+  revenueSharePct  Decimal  @db.Decimal(5,4)  // ex: 0.0400 (4.00%)
+
+  notes            String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([franchiseeId, startDate])
+}
+
+/* =========================
+   CAMIONS / DÉPLOIEMENTS / MAINTENANCE
+   ========================= */
+
+/// Lieu d’exploitation (marché, spot récurrent, événement), utile pour le planning.
+model Location {
+  id          String   @id @default(uuid())
+  name        String
+  address     String?
+  city        String?
+  postalCode  String?
+  lat         Float?
+  lng         Float?
+  isRecurringSpot Boolean @default(false)
+
+  deployments TruckDeployment[]
+  events      Event[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Camion attribué à une franchise.
+model Truck {
+  id            String           @id @default(uuid())
+  franchiseeId  String
+  franchisee    Franchisee       @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+
+  vin           String           @unique
+  plateNumber   String           @unique
+  model         String?
+  purchaseDate  DateTime?
+  active        Boolean          @default(true)
+  currentStatus TruckStatus      @default(AVAILABLE)
+
+  deployments   TruckDeployment[]
+  maintenances  TruckMaintenance[]
+  orders CustomerOrder[]
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([franchiseeId])
+}
+
+/// Planning d’envoi d’un camion sur un emplacement (prévu vs réel).
+model TruckDeployment {
+  id            String    @id @default(uuid())
+  truckId       String
+  truck         Truck     @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  franchiseeId  String
+  franchisee    Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  locationId    String?
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  plannedStart  DateTime
+  plannedEnd    DateTime?
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  notes         String?
+
+  createdAt     DateTime  @default(now())
+
+  @@index([truckId, plannedStart])
+  @@index([franchiseeId, plannedStart])
+  @@index([locationId, plannedStart])
+}
+
+/// Carnet d’entretien / pannes.
+model TruckMaintenance {
+  id           String            @id @default(uuid())
+  truckId      String
+  truck        Truck             @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  type         MaintenanceType   @default(SERVICE)
+  status       MaintenanceStatus @default(PLANNED)
+  scheduledAt  DateTime?
+  completedAt  DateTime?
+  cost         Decimal?          @db.Decimal(12,2)
+  notes        String?
+
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([truckId, status])
+}
+
+enum TruckStatus {
+  AVAILABLE
+  DEPLOYED
+  IN_MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum MaintenanceType {
+  SERVICE
+  REPAIR
+  INSPECTION
+}
+
+enum MaintenanceStatus {
+  PLANNED
+  IN_PROGRESS
+  DONE
+}
+
+/* =========================
+   ENTREPÔTS / FOURNISSEURS / PRODUITS / STOCKS
+   ========================= */
+
+/// Entrepôt (avec cuisine) – 4 en IDF dans le contexte.
+model Warehouse {
+  id          String            @id @default(uuid())
+  name        String
+  address     String?
+  city        String?
+  postalCode  String?
+  lat         Float?
+  lng         Float?
+  hasKitchen  Boolean           @default(true)
+  active      Boolean           @default(true)
+
+  inventories WarehouseInventory[]
+  movements   StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  customerOrders CustomerOrder[]
+  franchiseesDefault Franchisee[] @relation("DefaultWarehouse")
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+/// Fournisseur (référentiel).
+model Supplier {
+  id          String   @id @default(uuid())
+  name        String
+  contactEmail String?
+  contactPhone String?
+  address     String?
+  active      Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Tu pourras ajouter PurchasePrice si tu veux des prix d’achat par supplier.
+}
+
+/// Produit (catalogue interne). Le flag isCoreStock supporte le contrôle 80/20.
+model Product {
+  id          String       @id @default(uuid())
+  sku         String       @unique
+  name        String
+  type        ProductType  @default(INGREDIENT)
+  unit        Unit         @default(UNIT)
+  isCoreStock Boolean      @default(true) // true = “catalogue maison” (compte dans les 80%)
+  active      Boolean      @default(true)
+
+  prices      ProductPrice[]
+  inventories WarehouseInventory[]
+  movements   StockMovement[]
+  purchaseOrderLines PurchaseOrderLine[]
+  menuItems  MenuItem[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([type, isCoreStock])
+}
+
+enum ProductType {
+  INGREDIENT
+  PREPARED_DISH
+  BEVERAGE
+  MISC
+}
+
+enum Unit {
+  KG
+  L
+  UNIT
+}
+
+/// Historique de prix (vente publique ou interne selon ton usage).
+model ProductPrice {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  validFrom  DateTime
+  validTo    DateTime?
+  priceHT    Decimal  @db.Decimal(12,2)
+  tvaPct     Decimal  @db.Decimal(5,2)
+
+  createdAt  DateTime @default(now())
+
+  @@index([productId, validFrom])
+}
+
+/// Stock courant par entrepôt (onHand/reserved).
+model WarehouseInventory {
+  id          String    @id @default(uuid())
+  warehouseId String
+  productId   String
+  onHand      Decimal   @db.Decimal(12,3) // garde 3 décimales pour KG/L
+  reserved    Decimal   @db.Decimal(12,3) @default(0)
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+}
+
+/// Mouvements de stock (traçabilité fine).
+model StockMovement {
+  id          String          @id @default(uuid())
+  warehouseId String
+  productId   String
+  qty         Decimal         @db.Decimal(12,3) // positif/negatif
+  type        StockMoveType
+
+  /// Référence polymorphe vers l’origine du mouvement (PO, Order, Ajustement…)
+  refType     String?
+  refId       String?
+
+  createdAt   DateTime        @default(now())
+
+  warehouse   Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseId, productId, createdAt])
+  @@index([refType, refId])
+}
+
+enum StockMoveType {
+  PURCHASE_IN
+  TRANSFER_IN
+  TRANSFER_OUT
+  SALE_OUT
+  ADJUSTMENT
+}
+
+/* =========================
+   APPRO FRANCHISÉS (80/20)
+   ========================= */
+
+/// Commande d’approvisionnements d’un franchisé à un entrepôt.
+/// Le contrôle 80/20 se fait sur la composition des lignes (isCoreItem).
+model PurchaseOrder {
+  id            String        @id @default(uuid())
+  franchiseeId  String
+  warehouseId   String
+  orderedAt     DateTime      @default(now())
+  status        POStatus      @default(DRAFT)
+
+  /// Champs calculés côté service pour audit/affichage (optionnel)
+  corePct       Decimal?      @db.Decimal(6,5)
+  freePct       Decimal?      @db.Decimal(6,5)
+
+  franchisee    Franchisee    @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  lines         PurchaseOrderLine[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([franchiseeId, status])
+  @@index([warehouseId, status])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  productId       String
+  qty             Decimal       @db.Decimal(12,3)
+  unitPriceHT     Decimal       @db.Decimal(12,2)
+  tvaPct          Decimal       @db.Decimal(5,2)
+
+  /// Snapshot du produit core/free pour contrôle 80/20.
+  isCoreItem      Boolean
+
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+enum POStatus {
+  DRAFT
+  SUBMITTED
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+/* =========================
+   VENTE / COMMANDES CLIENT / PAIEMENTS
+   ========================= */
+
+/// Vue “vendable” côté client (peut référencer un Product, ou être un item composite).
+model MenuItem {
+  id          String    @id @default(uuid())
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  priceHT     Decimal   @db.Decimal(12,2)
+  tvaPct      Decimal   @db.Decimal(5,2)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orderLines  CustomerOrderLine[]
+}
+
+/// Commande client (sur place ou précommande en ligne).
+model CustomerOrder {
+  id              String        @id @default(uuid())
+  customerId      String
+  franchiseeId    String
+  truckId         String?
+  warehouseId     String?       // si retrait à l’entrepôt
+  channel         Channel       @default(IN_PERSON)
+  status          OrderStatus   @default(PENDING)
+  scheduledPickupAt DateTime?
+  placedAt        DateTime      @default(now())
+  totalHT         Decimal       @db.Decimal(12,2)
+  totalTVA        Decimal       @db.Decimal(12,2)
+  totalTTC        Decimal       @db.Decimal(12,2)
+
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  franchisee      Franchisee    @relation(fields: [franchiseeId], references: [id], onDelete: Restrict)
+  truck           Truck?        @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  warehouse       Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  lines           CustomerOrderLine[]
+  payments        Payment[]
+  invoice         Invoice?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([franchiseeId, placedAt])
+  @@index([customerId, placedAt])
+  @@index([status])
+}
+
+model CustomerOrderLine {
+  id               String        @id @default(uuid())
+  customerOrderId  String
+  menuItemId       String
+  qty              Int
+  unitPriceHT      Decimal       @db.Decimal(12,2)
+  tvaPct           Decimal       @db.Decimal(5,2)
+  lineTotalHT      Decimal       @db.Decimal(12,2)
+
+  order            CustomerOrder @relation(fields: [customerOrderId], references: [id], onDelete: Cascade)
+  menuItem         MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@index([customerOrderId])
+  @@index([menuItemId])
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  customerOrderId String
+  provider        PaymentProvider
+  amount          Decimal       @db.Decimal(12,2)
+  status          PaymentStatus @default(PENDING)
+  paidAt          DateTime?
+  transactionRef  String?
+
+  order           CustomerOrder @relation(fields: [customerOrderId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime      @default(now())
+
+  @@index([customerOrderId, status])
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  customerOrderId String        @unique
+  invoiceNumber   String        @unique
+  issuedAt        DateTime      @default(now())
+  pdfUrl          String?
+
+  order           CustomerOrder @relation(fields: [customerOrderId], references: [id], onDelete: Cascade)
+}
+
+enum Channel {
+  IN_PERSON
+  ONLINE_PREORDER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  FULFILLED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  CARD
+  CASH
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+/* =========================
+   FIDÉLITÉ
+   ========================= */
+
+/// Carte fidélité (numérique + imprimable).
+model LoyaltyCard {
+  id           String   @id @default(uuid())
+  customerId   String   @unique
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  cardNumber   String   @unique
+  points       Int      @default(0)
+  tier         LoyaltyTier @default(BASIC)
+  transactions LoyaltyTransaction[]
+  printablePdfUrl String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model LoyaltyTransaction {
+  id            String         @id @default(uuid())
+  loyaltyCardId String
+  loyaltyCard   LoyaltyCard    @relation(fields: [loyaltyCardId], references: [id], onDelete: Cascade)
+
+  type          LoyaltyTxnType
+  points        Int
+  createdAt     DateTime       @default(now())
+
+  /// Lien (optionnel) vers une commande client, pour justifier le gain/dépense.
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  refType       String?
+  refId         String?
+
+  @@index([loyaltyCardId, createdAt])
+}
+
+enum LoyaltyTier {
+  BASIC
+  SILVER
+  GOLD
+}
+
+enum LoyaltyTxnType {
+  EARN
+  SPEND
+  ADJUST
+}
+
+/* =========================
+   ÉVÉNEMENTS
+   ========================= */
+
+model Event {
+  id          String     @id @default(uuid())
+  franchiseeId String
+  franchisee  Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  startAt     DateTime
+  endAt       DateTime?
+  locationId  String?
+  location    Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  isPublic    Boolean    @default(true)
+
+  registrations EventRegistration[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([franchiseeId, startAt])
+}
+
+model EventRegistration {
+  id        String            @id @default(uuid())
+  eventId   String
+  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  customerId String
+  customer  Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status    EventRegStatus    @default(REGISTERED)
+  registeredAt DateTime       @default(now())
+
+  @@unique([eventId, customerId]) // un client ne s’inscrit qu’une fois
+  @@index([customerId, status])
+}
+
+enum EventRegStatus {
+  REGISTERED
+  CANCELLED
+  ATTENDED
+}
+
+/* =========================
+   REPORTING / REDEVANCE 4% / AUDIT
+   ========================= */
+
+/// Agrégats de ventes (table matérialisée ou “cache” d’agrégats).
+model SalesSummary {
+  id           String   @id @default(uuid())
+  franchiseeId String
+  period       String   // ex: "2025-07" ou "2025-07-21"
+  grossHT      Decimal  @db.Decimal(14,2)
+  grossTVA     Decimal  @db.Decimal(14,2)
+  grossTTC     Decimal  @db.Decimal(14,2)
+  ordersCount  Int
+
+  franchisee   Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([franchiseeId, period])
+  @@index([period])
+}
+
+/// État de redevance par période (4% du CA, sauf clause différente dans l’accord).
+model RevenueShareReport {
+  id            String   @id @default(uuid())
+  franchiseeId  String
+  period        String   // ex: "2025-07"
+  grossSales    Decimal  @db.Decimal(14,2)
+  sharePct      Decimal  @db.Decimal(5,4) // ex: 0.0400
+  amountDue     Decimal  @db.Decimal(14,2)
+  generatedPdfUrl String?
+
+  franchisee    Franchisee @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+
+  @@unique([franchiseeId, period])
+  @@index([period])
+}
+
+/// Journal d’audit (actions sensibles, payload JSON).
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  entity      String
+  entityId    String
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([entity, entityId, createdAt])
 }
