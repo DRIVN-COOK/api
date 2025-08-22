@@ -2,8 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { PrismaClient } from '@prisma/client';
-import authRoutes from './routes/auth.routes.js';
-import testRouter from "./routes/test.route.js";
+import { registerAllRoutes } from './routes/initRoutes.js';
+import { errorMiddleware } from "./utils/handlers.js";
 
 dotenv.config({ path: '../infra/.env' });
 
@@ -26,13 +26,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.use("/api", testRouter);
-app.use('/auth', authRoutes);
+registerAllRoutes(app);
 
-// Route test
-app.get("/", (req, res) => {
-  res.json({ message: "API DRIVN-COOK running 🚀" });
-});
+app.use(errorMiddleware);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);

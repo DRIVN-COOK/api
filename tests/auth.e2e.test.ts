@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/server';
 import { PrismaClient } from '@prisma/client';
+import { resetDbForAuth } from "./helpers/setupDbCleanup";
 
 const prisma = new PrismaClient();
 
 describe('Auth flow', () => {
   beforeAll(async () => {
-    await prisma.refreshToken.deleteMany({});
-    await prisma.user.deleteMany({});
+    await resetDbForAuth();
   });
 
   it('register + login + me + refresh + logout', async () => {
