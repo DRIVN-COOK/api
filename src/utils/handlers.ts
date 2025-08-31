@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { ZodError } from "zod";
 
 export function asyncWrap<T extends (req: Request, res: Response, next: NextFunction) => any>(fn: T) {
   return (req: Request, res: Response, next: NextFunction) =>
@@ -15,9 +16,23 @@ export class HttpError extends Error {
 
 // middleware d’erreur global (à mettre dans server.ts)
 export function errorMiddleware(err: any, _req: Request, res: Response, _next: NextFunction) {
-  if (err instanceof HttpError) {
-    return res.status(err.status).json({ error: err.message });
+  // Zod → 400 + détails exploitables par le front
+  if (err instanceof ZodError) {
+    return res.status(400).json({
+      name: "ZodError",
+      issues: err.issues, // [{ path, message, ... }]
+    });
   }
+
+  // Erreurs “connues” avec message
+  if (err && typeof err === "object" && "status" in err && "message" in err) {
+    const status = (err as any).status || 500;
+    return res.status(status).json({
+      message: (err as any).message || "Server error",
+    });
+  }
+
+  // Fallback 500 (éviter d’exposer la stack en prod)
   console.error(err);
-  res.status(500).json({ error: "Internal Server Error" });
+  return res.status(500).json({ message: "Internal server error" });
 }
