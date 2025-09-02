@@ -29,3 +29,5 @@ export * as eventRegistrationController from './event-registration.controller.js
 export * as saleSummaryController from './sales-summary.controller.js';
 export * as revenueShareReportController from './revenue-share-report.controller.js';
 export * as auditLogController from './audit-log.controller.js';
+export * as customerOrderController from './customer-order.controller.js';
+export * as stockController from './stock.controller.js'; // si tu veux aussi exposer celui-ci
