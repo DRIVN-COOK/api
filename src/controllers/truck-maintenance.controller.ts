@@ -7,6 +7,8 @@ import {
   updateTruckMaintenanceSchema,
   listTruckMaintenanceQuerySchema,
   truckMaintenanceIdParam,
+  truckIdOnlyParam,
+  listMaintByTruckQuerySchema,
 } from "../validators/truck-maintenance.validators.js";
 
 const prisma = new PrismaClient();
@@ -130,4 +132,35 @@ export const remove: RequestHandler = asyncWrap(async (req, res) => {
   const { id } = truckMaintenanceIdParam.parse(req.params);
   await prisma.truckMaintenance.delete({ where: { id } });
   res.status(204).end();
+});
+
+/**
+ * GET /trucks/:truckId/maintenances
+ * Liste paginée des maintenances pour un camion donné.
+ */
+export const listByTruck: RequestHandler = asyncWrap(async (req, res) => {
+  const { truckId } = truckIdOnlyParam.parse(req.params);
+  const { page = 1, pageSize = 20, status } = listMaintByTruckQuerySchema.parse(req.query);
+
+  // (facultatif) 404 si le truck n'existe pas
+  const exists = await prisma.truck.findUnique({ where: { id: truckId }, select: { id: true } });
+  if (!exists) throw new HttpError(404, "Truck not found");
+
+  const where: Prisma.TruckMaintenanceWhereInput = {
+    truckId,
+    ...(status ? { status } : {}),
+  };
+
+  const [items, total] = await Promise.all([
+    prisma.truckMaintenance.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: { createdAt: "desc" },
+      include: { truck: { select: { plateNumber: true } } }, // utile pour l’affichage
+    }),
+    prisma.truckMaintenance.count({ where }),
+  ]);
+
+  res.json({ items, page, pageSize, total });
 });

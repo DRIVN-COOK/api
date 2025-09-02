@@ -10,5 +10,11 @@ export const paginationQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
 });
 
+export const nullableId = z.preprocess(
+  (v) => (v === '' || v === undefined ? null : v),
+  z.string().uuid().nullable()
+);
+
 export type IdParam = z.infer<typeof idParamSchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+
