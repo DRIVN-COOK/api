@@ -2,7 +2,7 @@ import { z } from "zod";
 import { idParamSchema, paginationQuerySchema } from "./common.js";
 
 export const createTruckSchema = z.object({
-  franchiseeId: z.string().uuid(),
+  franchiseeId: z.string().uuid().optional(),
   vin: z.string().min(5),
   plateNumber: z.string().min(3),
   model: z.string().max(120).optional(),

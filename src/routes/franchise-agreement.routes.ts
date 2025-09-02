@@ -9,5 +9,6 @@ r.get("/:id", requireAuth, ctrl.getById);
 r.post("/", requireAuth, ctrl.create);
 r.put("/:id", requireAuth, ctrl.update);
 r.delete("/:id", requireAuth, ctrl.remove);
+r.get("/:id/pdf", requireAuth, ctrl.pdfById);
 
 export default r;
