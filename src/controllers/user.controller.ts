@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma, Role as PrismaRole } from "@prisma/client";
 import { asyncWrap, HttpError } from "../utils/handlers.js";
 import {
   createUserSchema,
@@ -7,28 +7,38 @@ import {
   listUserQuerySchema,
   userIdParam,
 } from "../validators/user.validators.js";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 export const list: RequestHandler = asyncWrap(async (req, res) => {
-  const { page = 1, pageSize = 20, q } = listUserQuerySchema.parse(req.query);
+  const { page, pageSize, q, role } = listUserQuerySchema.parse(req.query);
 
-  const where: Prisma.UserWhereInput = q
-    ? {
-        OR: [
-          { email: { contains: q, mode: "insensitive" } },
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-        ],
-      }
-    : {};
+  const where: Prisma.UserWhereInput = {
+    AND: [
+      role ? { role } : {},
+      q
+        ? {
+            OR: [
+              { email:     { contains: q, mode: 'insensitive' } },
+              { firstName: { contains: q, mode: 'insensitive' } },
+              { lastName:  { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {},
+    ],
+  };
 
   const [items, total] = await Promise.all([
     prisma.user.findMany({
       where,
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, email: true, firstName: true, lastName: true, role: true,
+        createdAt: true, updatedAt: true,
+      },
     }),
     prisma.user.count({ where }),
   ]);
@@ -44,21 +54,43 @@ export const getById: RequestHandler = asyncWrap(async (req, res) => {
 });
 
 export const create: RequestHandler = asyncWrap(async (req, res) => {
-  const data = createUserSchema.parse(req.body);
+  // 1) Supporte `password` OU `passwordHash` (compat rétro)
+  const passwordHash =
+    typeof req.body.password === 'string' && req.body.password.length > 0
+      ? await bcrypt.hash(req.body.password, 12)
+      : (typeof req.body.passwordHash === 'string' ? req.body.passwordHash : null);
 
-  // unicité email
+  if (!passwordHash) {
+    throw new HttpError(400, 'Password is required');
+  }
+
+  // 2) On ne valide que les champs attendus par le schema (évite un .strict() qui casse)
+  const data = createUserSchema.parse({
+    email: req.body.email,
+    passwordHash,
+    role: req.body.role,
+    firstName: req.body.firstName ?? null, // nullable => jamais undefined
+    lastName: req.body.lastName ?? null,   // nullable => jamais undefined
+  });
+
+  // 3) Unicité email
   const exists = await prisma.user.findUnique({ where: { email: data.email } });
-  if (exists) throw new HttpError(409, "Email already used");
+  if (exists) throw new HttpError(409, 'Email already used');
 
-  const payload: Prisma.UserCreateInput = {
+  // 4) Création + on NE renvoie PAS le hash
+  const created = await prisma.user.create({
+  data: {
     email: data.email,
     passwordHash: data.passwordHash,
     role: data.role,
-    firstName: data.firstName ?? null, // nullable => jamais undefined
-    lastName: data.lastName ?? null,   // nullable => jamais undefined
-  };
-
-  const created = await prisma.user.create({ data: payload });
+    firstName: data.firstName ?? null,
+    lastName:  data.lastName  ?? null,
+  },
+  select: {
+    id: true, email: true, firstName: true, lastName: true,
+    role: true, createdAt: true, updatedAt: true,
+  },
+});
   res.status(201).json(created);
 });
 
