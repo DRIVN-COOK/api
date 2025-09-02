@@ -2,7 +2,7 @@
 import type { RequestHandler } from "express";
 import { PrismaClient } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
-import { Decimal } from "@prisma/client/runtime/library"; // ✅ constructeur Decimal
+import { Decimal } from "@prisma/client/runtime/library";
 import { asyncWrap, HttpError } from "../utils/handlers.js";
 import { createOrderBodySchema } from "../validators/orders.validators.js";
 
