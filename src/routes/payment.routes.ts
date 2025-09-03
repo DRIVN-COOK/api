@@ -12,4 +12,14 @@ r.post("/:id/refund", requireAuth, ctrl.refund);
 r.put("/:id", requireAuth, ctrl.update);
 r.delete("/:id", requireAuth, ctrl.remove);
 
+r.post("/checkout/franchise-entry", requireAuth, ctrl.checkoutFranchiseEntry);
+r.post("/confirm", requireAuth, ctrl.confirm);
+
+// ✅ corriger ici : utiliser ctrl au lieu de payment
+r.post(
+  "/customer-orders/:id/checkout-session",
+  requireAuth,
+  ctrl.createCustomerOrderCheckoutSession
+);
+
 export default r;

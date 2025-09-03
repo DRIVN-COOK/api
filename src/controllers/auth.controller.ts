@@ -2,6 +2,11 @@ import type { RequestHandler } from 'express';
 import { registerSchema, loginSchema, refreshSchema } from '../validators/auth.validators.js';
 import * as auth from '../services/auth.service.js';
 
+
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
 export const register: RequestHandler = async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ errors: parsed.error.flatten() });
@@ -62,4 +67,27 @@ export const logout: RequestHandler = async (req, res) => {
   if (!parsed.success) return res.status(400).json({ errors: parsed.error.flatten() });
   await auth.logout(parsed.data.refreshToken);
   return res.status(204).send();
+};
+
+export const meFull: RequestHandler = async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const me = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        franchiseUsers: {
+          include: { franchisee: true },
+        },
+      },
+    });
+
+    if (!me) return res.status(404).json({ message: 'User not found' });
+
+    const { passwordHash, ...safe } = me as any;
+    return res.json(safe);
+  } catch (e) {
+    return res.status(500).json({ message: 'Server error' });
+  }
 };

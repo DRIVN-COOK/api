@@ -9,5 +9,6 @@ r.get("/:id", requireAuth, ctrl.getById);
 r.post("/", requireAuth, ctrl.attachUser);
 r.put("/:id", requireAuth, ctrl.update);
 r.delete("/:id", requireAuth, ctrl.detachUser);
+r.post("/attach-self", requireAuth, ctrl.attachSelf);
 
 export default r;

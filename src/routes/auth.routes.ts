@@ -9,5 +9,7 @@ r.post("/login", ctrl.login);
 r.post("/refresh", ctrl.refresh);
 r.post("/logout", ctrl.logout);
 r.get("/me", requireAuth, ctrl.me);
+r.get("/me/full", requireAuth, ctrl.meFull);
+
 
 export default r;
