@@ -303,16 +303,16 @@ async function seedUsers(franchisees) {
   const rows = [
     { email: 'alice.admin@drivncook.local', role: 'ADMIN',  firstName: 'Alice',  lastName: 'Admin' },
     { email: 'henri.hq@drivncook.local',    role: 'ADMIN',  firstName: 'Henri',  lastName: 'HQ'    },
-    { email: 'bob.paris@drivncook.local',   role: 'USER',   firstName: 'Bob',    lastName: 'Paris',     franchiseeIndex: 0 },
-    { email: 'clara.bercy@drivncook.local', role: 'USER',   firstName: 'Clara',  lastName: 'Bercy',     franchiseeIndex: 0 },
-    { email: 'david.vitry@drivncook.local', role: 'USER',   firstName: 'David',  lastName: 'Vitry',     franchiseeIndex: 1 },
-    { email: 'eva.nanterre@drivncook.local',role: 'USER',   firstName: 'Eva',    lastName: 'Nanterre',  franchiseeIndex: 2 },
-    { email: 'fred.std@drivncook.local',    role: 'USER',   firstName: 'Fred',   lastName: 'StDenis',   franchiseeIndex: 3 },
-    { email: 'gina.creteil@drivncook.local',role: 'USER',   firstName: 'Gina',   lastName: 'Creteil',   franchiseeIndex: 4 },
-    { email: 'hugo.client@drivncook.local', role: 'USER',   firstName: 'Hugo',   lastName: 'Client' },
-    { email: 'ines.client@drivncook.local', role: 'USER',   firstName: 'Inès',   lastName: 'Client' },
-    { email: 'yanis.client@drivncook.local',role: 'USER',   firstName: 'Yanis',  lastName: 'Client' },
-    { email: 'zoe.client@drivncook.local',  role: 'USER',   firstName: 'Zoé',    lastName: 'Client' },
+    { email: 'bob.paris@drivncook.local',   role: 'CUSTOMER',   firstName: 'Bob',    lastName: 'Paris',     franchiseeIndex: 0 },
+    { email: 'clara.bercy@drivncook.local', role: 'CUSTOMER',   firstName: 'Clara',  lastName: 'Bercy',     franchiseeIndex: 0 },
+    { email: 'david.vitry@drivncook.local', role: 'CUSTOMER',   firstName: 'David',  lastName: 'Vitry',     franchiseeIndex: 1 },
+    { email: 'eva.nanterre@drivncook.local',role: 'CUSTOMER',   firstName: 'Eva',    lastName: 'Nanterre',  franchiseeIndex: 2 },
+    { email: 'fred.std@drivncook.local',    role: 'CUSTOMER',   firstName: 'Fred',   lastName: 'StDenis',   franchiseeIndex: 3 },
+    { email: 'gina.creteil@drivncook.local',role: 'CUSTOMER',   firstName: 'Gina',   lastName: 'Creteil',   franchiseeIndex: 4 },
+    { email: 'hugo.client@drivncook.local', role: 'FRANCHISEE',   firstName: 'Hugo',   lastName: 'Client' },
+    { email: 'ines.client@drivncook.local', role: 'FRANCHISEE',   firstName: 'Inès',   lastName: 'Client' },
+    { email: 'yanis.client@drivncook.local',role: 'FRANCHISEE',   firstName: 'Yanis',  lastName: 'Client' },
+    { email: 'zoe.client@drivncook.local',  role: 'FRANCHISEE',   firstName: 'Zoé',    lastName: 'Client' },
   ];
 
   const createdUsers = [];
