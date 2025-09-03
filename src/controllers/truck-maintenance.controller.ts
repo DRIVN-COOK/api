@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma,  MaintenanceStatus, TruckStatus } from "@prisma/client";
 import { asyncWrap, HttpError } from "../utils/handlers.js";
 
 import {
@@ -82,32 +82,21 @@ export const create: RequestHandler = asyncWrap(async (req, res) => {
   res.status(201).json(created);
 });
 
-/**
- * PATCH /truck-maintenances/:id
- * - UpdateInput “checked” + `{ set: ... }` pour les scalaires
- * - Relations via `connect` si fournies
- */
 export const update: RequestHandler = asyncWrap(async (req, res) => {
   const { id } = truckMaintenanceIdParam.parse(req.params);
   const data = updateTruckMaintenanceSchema.parse(req.body);
 
-  // Relation vers Truck (obligatoire au niveau modèle, mais modifiable via connect)
+  // Relation vers Truck (modifiable via connect)
   const relationPart: Prisma.TruckMaintenanceUpdateInput = {
-    ...(data.truckId !== undefined
-      ? { truck: { connect: { id: data.truckId } } }
-      : {}),
+    ...(data.truckId !== undefined ? { truck: { connect: { id: data.truckId } } } : {}),
   };
 
-  // Champs scalaires — utiliser { set: ... } et n’inclure que si définis
+  // Champs scalaires (set uniquement si définis)
   const scalarPart: Prisma.TruckMaintenanceUpdateInput = {
     ...(data.type !== undefined ? { type: { set: data.type } } : {}),
     ...(data.status !== undefined ? { status: { set: data.status } } : {}),
-    ...(data.scheduledAt !== undefined
-      ? { scheduledAt: { set: data.scheduledAt ?? null } }
-      : {}),
-    ...(data.completedAt !== undefined
-      ? { completedAt: { set: data.completedAt ?? null } }
-      : {}),
+    ...(data.scheduledAt !== undefined ? { scheduledAt: { set: data.scheduledAt ?? null } } : {}),
+    ...(data.completedAt !== undefined ? { completedAt: { set: data.completedAt ?? null } } : {}),
     ...(data.cost !== undefined ? { cost: { set: data.cost ?? null } } : {}),
     ...(data.notes !== undefined ? { notes: { set: data.notes ?? null } } : {}),
   };
@@ -117,11 +106,36 @@ export const update: RequestHandler = asyncWrap(async (req, res) => {
     ...scalarPart,
   };
 
-  const updated = await prisma.truckMaintenance.update({
-    where: { id },
-    data: payload,
-    include: { truck: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    // 1) Mettre à jour la maintenance (retourne le truckId à jour si on a re-connecté)
+    const maint = await tx.truckMaintenance.update({
+      where: { id },
+      data: payload,
+      include: { truck: true },
+    });
+
+    // 2) Si la maintenance passe "IN_PROGRESS" → basculer le camion en "IN_MAINTENANCE"
+    if (data.status === MaintenanceStatus.IN_PROGRESS && maint.truckId) {
+      await tx.truck.update({
+        where: { id: maint.truckId },
+        data: { currentStatus: TruckStatus.IN_MAINTENANCE },
+      });
+    }
+
+    if (data.status === MaintenanceStatus.DONE && maint.truckId) {
+      await tx.truck.update({
+        where: { id: maint.truckId },
+        data: { currentStatus: TruckStatus.AVAILABLE },
+      });
+    }
+
+    // 3) Retourner l’entité à jour avec la relation truck
+    return tx.truckMaintenance.findUniqueOrThrow({
+      where: { id: maint.id },
+      include: { truck: true },
+    });
   });
+
   res.json(updated);
 });
 

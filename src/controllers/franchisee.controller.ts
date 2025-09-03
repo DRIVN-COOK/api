@@ -7,6 +7,7 @@ import {
   listFranchiseeQuerySchema,
   franchiseeIdParam,
 } from "../validators/franchisee.validators.js";
+import { FIXED_ENTRY_FEE, FIXED_REVENUE_PCT } from '../controllers/franchise-agreement.controller.js';
 
 const prisma = new PrismaClient();
 
@@ -51,13 +52,12 @@ export const create: RequestHandler = asyncWrap(async (req, res) => {
 
   // Unicité SIREN (suppose une contrainte unique sur siren)
   const exists = await prisma.franchisee.findUnique({ where: { siren: data.siren } });
-  if (exists) throw new HttpError(409, "Franchisee already exists");
+  if (exists) throw new HttpError(409, 'Franchisee already exists');
 
   // Champs nullable → forcer à null (jamais undefined)
   const payload: Prisma.FranchiseeCreateInput = {
     name: data.name,
     siren: data.siren,
-    // optionnels non-nullables (ex. boolean) : seulement si fournis
     ...(data.active !== undefined ? { active: data.active } : {}),
     contactEmail: data.contactEmail ?? null,
     contactPhone: data.contactPhone ?? null,
@@ -68,8 +68,38 @@ export const create: RequestHandler = asyncWrap(async (req, res) => {
       : {}),
   };
 
-  const created = await prisma.franchisee.create({ data: payload });
-  res.status(201).json(created);
+  // Date de début d’accord: joinDate si fourni, sinon "aujourd’hui"
+  const agreementStart = data.joinDate ? new Date(data.joinDate) : new Date();
+
+  const result = await prisma.$transaction(async (tx) => {
+    // 1) créer la franchise
+    const created = await tx.franchisee.create({
+      data: payload,
+    });
+
+    // 2) créer l’accord lié avec les valeurs verrouillées
+    await tx.franchiseAgreement.create({
+      data: {
+        franchisee: { connect: { id: created.id } },
+        startDate: agreementStart,
+        endDate: null,
+        entryFeeAmount: FIXED_ENTRY_FEE,
+        revenueSharePct: FIXED_REVENUE_PCT,
+        notes: null,
+      },
+    });
+
+    // 3) renvoyer la franchise enrichie (avec agreements si tu veux l’afficher direct)
+    return tx.franchisee.findUniqueOrThrow({
+      where: { id: created.id },
+      include: {
+        defaultWarehouse: true,
+        agreements: true, // <- utile pour vérifier côté back-office
+      },
+    });
+  });
+
+  res.status(201).json(result);
 });
 
 // PATCH /franchisees/:id

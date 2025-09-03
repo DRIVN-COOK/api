@@ -14,8 +14,8 @@ import PDFDocument from "pdfkit";
 const prisma = new PrismaClient();
 
 // === Politique commerciale (verrouillage serveur) ===
-const FIXED_ENTRY_FEE = "50000.00";    // € HT
-const FIXED_REVENUE_PCT = "0.0400";    // 4.00%
+export const FIXED_ENTRY_FEE = "50000.00";    // € HT
+export const FIXED_REVENUE_PCT = "0.0400";    // 4.00%
 
 // === Helpers ===
 function assertEndAfterStart(start: Date, end?: Date | null) {
