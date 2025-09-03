@@ -198,6 +198,32 @@ async function seedTrucks(franchisees) {
   return out; // total: 7 camions
 }
 
+
+async function seedCustomersFromUsers() {
+  // on crée un Customer pour chaque User avec role=CUSTOMER si absent
+  const users = await prisma.user.findMany({
+    where: { role: 'CUSTOMER' },
+    select: { id: true, email: true },
+  });
+
+  let created = 0;
+  for (const u of users) {
+    const exists = await prisma.customer.findUnique({ where: { userId: u.id } }).catch(() => null);
+    if (exists) continue;
+
+    await prisma.customer.create({
+      data: {
+        userId: u.id,
+        // champs optionnels laissés à null: phone, defaultCity, defaultZip...
+      },
+    });
+    created++;
+  }
+
+  console.log(`  → Customers from users: ${created}`);
+  return created;
+}
+
 // -----------------------------------------------------
 // Warehouses (IDF) – champs alignés à ton schéma
 // -----------------------------------------------------
@@ -975,6 +1001,8 @@ async function main() {
 
   const users = await seedUsers(franchisees);
   console.log(`  → Users: ${users.length} (>=1 ADMIN, + USERS rattachés via pivot)`);
+
+  await trySeed('Customers from users', seedCustomersFromUsers);
 
   const products = await trySeed('Products & Prices (catalog)', seedProductsAndPrices);
 
