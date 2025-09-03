@@ -17,19 +17,49 @@ export const list: RequestHandler = asyncWrap(async (req, res) => {
   const { page = 1, pageSize = 20, status } =
     listPurchaseOrderQuerySchema.parse(req.query);
 
-  // Toujours un objet, jamais `undefined`
   const where: Prisma.PurchaseOrderWhereInput = status ? { status } : {};
 
-  const [items, total] = await Promise.all([
+  const [orders, total] = await Promise.all([
     prisma.purchaseOrder.findMany({
       where,
-      include: { franchisee: true, warehouse: true, lines: true },
+      include: {
+        franchisee: true,
+        warehouse: true,
+        lines: {
+          select: { qty: true, unitPriceHT: true }, // on ne prend que l’essentiel
+        },
+      },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: { orderedAt: "desc" },
+      orderBy: { orderedAt: 'desc' },
     }),
     prisma.purchaseOrder.count({ where }),
   ]);
+
+  // map DTO: calcule totalHT et n’expose pas les lines complètes si inutile
+  const items = orders.map((po) => {
+    const totalHTDecimal = po.lines.reduce((sum, l) => {
+      // Prisma.Decimal safe (évite les erreurs d’arrondi flottant)
+      return sum.add(new Prisma.Decimal(l.qty).mul(l.unitPriceHT));
+    }, new Prisma.Decimal(0));
+
+    return {
+      id: po.id,
+      status: po.status,
+      orderedAt: po.orderedAt,
+      createdAt: po.createdAt,
+      franchiseeId: po.franchiseeId,
+      warehouseId: po.warehouseId,
+      franchisee: po.franchisee
+        ? { id: po.franchisee.id, name: po.franchisee.name ?? null }
+        : null,
+      warehouse: po.warehouse
+        ? { id: po.warehouse.id, name: po.warehouse.name ?? null, code: po.warehouse.postalCode ?? null, city: po.warehouse.city ?? null }
+        : null,
+      totalHT: totalHTDecimal.toFixed(2), // ← string "123.45"
+      // corePct: si un jour tu le calcules ici, ajoute-le
+    };
+  });
 
   res.json({ items, page, pageSize, total });
 });

@@ -9,5 +9,7 @@ r.get("/:id", requireAuth, ctrl.getById);
 r.post("/", requireAuth, ctrl.create);           // ou public si précommande ouverte
 r.put("/:id/status", requireAuth, ctrl.updateStatus);
 r.delete("/:id", requireAuth, ctrl.cancel);
+r.get("/:id/pdf", ctrl.downloadPdf);
+
 
 export default r;
